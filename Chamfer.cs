@@ -29,7 +29,8 @@ namespace Chamfer
     internal class Chamfer : MapTool
     {
         private IDisposable _graphic = null;
-        private CIMLineSymbol _lineSymbol = null;
+        private CIMLineSymbol _solid_line = null;
+        private CIMLineSymbol _dashed_line = null;
 
         private ObservableCollection<Polyline> _selected_segments = new();
 
@@ -45,11 +46,12 @@ namespace Chamfer
 
         protected override async Task OnToolActivateAsync(bool active)
         {
-            if (_lineSymbol == null)
+            if (_solid_line == null || _dashed_line == null)
             {
                 await QueuedTask.Run(() =>
                 {
-                    _lineSymbol = SymbolFactory.Instance.ConstructLineSymbol(CIMColor.CreateRGBColor(128, 128, 128), 4.0, SimpleLineStyle.Solid);
+                    _solid_line = SymbolFactory.Instance.ConstructLineSymbol(CIMColor.CreateRGBColor(128, 128, 128), 4.0, SimpleLineStyle.Solid);
+                    _dashed_line = SymbolFactory.Instance.ConstructLineSymbol(CIMColor.CreateRGBColor(128, 128, 128), 4.0, SimpleLineStyle.Dash);
                 });
             }
         }
@@ -93,7 +95,7 @@ namespace Chamfer
                     {
                         if (_graphic != null)
                             _graphic.Dispose();
-                        _graphic = this.AddOverlay(selected_seg_geom, _lineSymbol.MakeSymbolReference());
+                        _graphic = this.AddOverlay(selected_seg_geom, _solid_line.MakeSymbolReference());
                     }
                 }
                 // Case: One segment already selected
@@ -107,8 +109,8 @@ namespace Chamfer
                     var merged_geoms = GeometryEngine.Instance.Union(_selected_segments[0], selected_seg_geom) as Polyline;
                     lock (_lock)
                     {
-                        //this.UpdateOverlay(_graphic, merged_geoms, _lineSymbol.MakeSymbolReference());
-                        this.UpdateOverlay(_graphic, extensions, _lineSymbol.MakeSymbolReference());
+                        this.UpdateOverlay(_graphic, merged_geoms, _solid_line.MakeSymbolReference());
+                        this.UpdateOverlay(_graphic, extensions, _dashed_line.MakeSymbolReference());
                     }
                 }
                 // Case: Two segments already selected
@@ -122,10 +124,9 @@ namespace Chamfer
                         if (_graphic != null)
                             _graphic.Dispose();
 
-                        _graphic = this.AddOverlay(selected_seg_geom, _lineSymbol.MakeSymbolReference());
+                        _graphic = this.AddOverlay(selected_seg_geom, _solid_line.MakeSymbolReference());
                     }
                 }
-
                 // Edit operation syntax
                 //var op = new EditOperation()
                 //{
@@ -136,17 +137,14 @@ namespace Chamfer
                 //op.Modify(insp);
                 //return op.Execute();
                 return true;
-
             });
-
-            
-
             return Task.FromResult(true);
         }
 
         protected override Task<bool> OnToolDeactivateAsync(bool hasMapViewChanged)
         {
-            _lineSymbol = null;
+            _solid_line = null;
+            _dashed_line = null;
             _selected_segments = new();
 
             lock (_lock)
@@ -234,7 +232,7 @@ namespace Chamfer
                 theoretical_extensions.Add(PolylineBuilderEx.CreatePolyline(new[] { closest_point, intersection_point }, line.SpatialReference));
             }
 
-            return GeometryEngine.Instance.Union(theoretical_extensions[0], theoretical_extensions[1]) as Polyline;
+            return GeometryEngine.Instance.Union(new[] { theoretical_extensions[0], theoretical_extensions[1] }) as Polyline;
         }
 
         #endregion
