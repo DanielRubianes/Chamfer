@@ -353,17 +353,18 @@ namespace Chamfer
                 //    : (line2.Slope == null) ? line1.Slope
                 //    : (line1.Slope.Value + line2.Slope.Value) / 2;
 
-                //double angle1 = line1.Slope.HasValue ? Math.Atan(line1.Slope.Value) : Math.PI / 2;
-                //double angle2 = line2.Slope.HasValue ? Math.Atan(line2.Slope.Value) : Math.PI / 2;
+                double angle1 = line1.Slope.HasValue ? Math.Atan(line1.Slope.Value) : Math.PI / 2;
+                double angle2 = line2.Slope.HasValue ? Math.Atan(line2.Slope.Value) : Math.PI / 2;
 
-                //double avg_angle = (angle1 / angle2) / 2;
+                double avg_angle = (angle1 / angle2) / 2;
 
-                //double avg_slope = Math.Tan(avg_angle);
+                double avg_slope = Math.Tan(avg_angle);
 
-                //MapPoint translated_mouse_point = GeometryEngine.Instance.Move(mouse_point, 1, avg_slope) as MapPoint;
-                //InfiniteLine mouse_line = new InfiniteLine(mouse_point, translated_mouse_point);
+                MapPoint translated_mouse_point = GeometryEngine.Instance.Move(mouse_point, 1, avg_slope) as MapPoint;
+                InfiniteLine mouse_line = new InfiniteLine(mouse_point, translated_mouse_point);
 
-                var mouse_line = InfiniteLine.rotate90(line1);
+                //var mouse_line = InfiniteLine.rotate90(line1);
+
                 var int_pt1 = GetIntersectionPoint(line1, mouse_line);
                 var int_pt2 = GetIntersectionPoint(line2, mouse_line);
                 return PolylineBuilderEx.CreatePolyline(new[] { int_pt1, int_pt2 }, intersection_point.SpatialReference);
