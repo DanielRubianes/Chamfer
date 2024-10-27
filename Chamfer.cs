@@ -28,13 +28,52 @@ namespace Chamfer
 {
     internal class Chamfer : MapTool
     {
+        enum TrackingState
+        {
+            NotTracking = 0,
+            CanTrack,
+            Tracking
+        }
+
         private IDisposable _graphic = null;
         private CIMLineSymbol _solid_line = null;
         private CIMLineSymbol _dashed_line = null;
 
-        private ObservableCollection<Polyline> _selected_segments = new();
+        private List<InfiniteLine> _selected_segments = new();
 
+        private System.Windows.Point? _lastLocation = null;
+        private System.Windows.Point? _workingLocation = null;
+
+        private TrackingState _trackingMouseMove = TrackingState.NotTracking;
         private static readonly object _lock = new object();
+
+        public class InfiniteLine
+        // Contains a slope-intercept defenition of a two-point line, as well as the endpoints used to construct said line
+        // Intended to operate on two-point line segments
+        {
+            public readonly Polyline DisplayGeometry;
+            public readonly MapPoint StartPoint;
+            public readonly MapPoint EndPoint;
+            public readonly double? Slope;
+            public readonly double Intercept;
+
+            public InfiniteLine(Polyline line) : this(line.Points[0], line.Points[^1], line) { }
+            public InfiniteLine(Segment seg) : this(seg.StartPoint, seg.EndPoint) { }
+            public InfiniteLine(MapPoint start_point, MapPoint end_point, Polyline display_geometry = null)
+            {
+                DisplayGeometry = (display_geometry == null)
+                    ? PolylineBuilderEx.CreatePolyline(new[] { start_point, end_point }, start_point.SpatialReference)
+                    : display_geometry;
+                StartPoint = start_point;
+                EndPoint = end_point;
+                Slope = (end_point.X == start_point.X)
+                    ? null // Vertical line, undefined slope
+                    : (end_point.Y - start_point.Y) / (end_point.X - start_point.X);
+                Intercept = (Slope == null)
+                    ? start_point.X // Vertical line; X is constant
+                    : start_point.Y - (Slope.Value * start_point.X);
+            }
+        }
 
         public Chamfer()
         {
@@ -46,12 +85,15 @@ namespace Chamfer
 
         protected override async Task OnToolActivateAsync(bool active)
         {
+            _lastLocation = null;
+            _workingLocation = null;
+            _trackingMouseMove = TrackingState.NotTracking;
             if (_solid_line == null || _dashed_line == null)
             {
                 await QueuedTask.Run(() =>
                 {
-                    _solid_line = SymbolFactory.Instance.ConstructLineSymbol(CIMColor.CreateRGBColor(128, 128, 128), 4.0, SimpleLineStyle.Solid);
-                    _dashed_line = SymbolFactory.Instance.ConstructLineSymbol(CIMColor.CreateRGBColor(128, 128, 128), 4.0, SimpleLineStyle.Dash);
+                    _solid_line = SymbolFactory.Instance.ConstructLineSymbol(CIMColor.CreateRGBColor(128, 128, 128), 3.0, SimpleLineStyle.Solid);
+                    _dashed_line = SymbolFactory.Instance.ConstructLineSymbol(CIMColor.CreateRGBColor(0, 0, 0), 3.0, SimpleLineStyle.Dash);
                 });
             }
         }
@@ -84,48 +126,46 @@ namespace Chamfer
                     .SelectMany(segment => segment).ToList()
                     .OrderBy(segment => GeometryEngine.Instance.Distance(point_selection, PolylineBuilderEx.CreatePolyline(segment)))
                     .FirstOrDefault();
-                Polyline selected_seg_geom = PolylineBuilderEx.CreatePolyline(selected_segment);
+                InfiniteLine selected_line = new InfiniteLine(selected_segment);
 
-                // Case: No selection made
+                // Case: No prior selection
                 if (_selected_segments.Count == 0)
                 {
                     _selected_segments.Clear();
-                    _selected_segments.Add(selected_seg_geom);
+                    _selected_segments.Add(selected_line);
                     lock (_lock)
                     {
                         if (_graphic != null)
                             _graphic.Dispose();
-                        _graphic = this.AddOverlay(selected_seg_geom, _solid_line.MakeSymbolReference());
+                        _graphic = this.AddOverlay(selected_line.DisplayGeometry, _solid_line.MakeSymbolReference());
                     }
+                    _trackingMouseMove = TrackingState.NotTracking;
                 }
                 // Case: One segment already selected
                 else if (_selected_segments.Count == 1)
                 {
-                    Polyline extensions = ChamferLines(_selected_segments[0], selected_seg_geom);
+                    Polyline extensions = ChamferLines(_selected_segments[0], selected_line);
                     // Case: No intersection found (parallel lines)
                     if (extensions == null)
                         return false;
-                    _selected_segments.Add(selected_seg_geom);
-                    var merged_geoms = GeometryEngine.Instance.Union(_selected_segments[0], selected_seg_geom) as Polyline;
+                    _selected_segments.Add(selected_line);
                     lock (_lock)
                     {
-                        this.UpdateOverlay(_graphic, merged_geoms, _solid_line.MakeSymbolReference());
                         this.UpdateOverlay(_graphic, extensions, _dashed_line.MakeSymbolReference());
                     }
+                    _trackingMouseMove = TrackingState.CanTrack;
                 }
                 // Case: Two segments already selected
                 // This is a stub to allow repeated testing of initial selection
                 else if (_selected_segments.Count > 1)
                 {
                     _selected_segments.Clear();
-                    _selected_segments.Add(selected_seg_geom);
                     lock (_lock)
                     {
                         if (_graphic != null)
                             _graphic.Dispose();
-
-                        _graphic = this.AddOverlay(selected_seg_geom, _solid_line.MakeSymbolReference());
                     }
+                    _trackingMouseMove = TrackingState.NotTracking;
                 }
                 // Edit operation syntax
                 //var op = new EditOperation()
@@ -159,79 +199,133 @@ namespace Chamfer
             return Task.FromResult(true);
         }
 
-        #region Internal Functions
-
-        private static double? GetSlope(double x1, double y1, double x2, double y2)
+        protected override async void OnToolMouseMove(MapViewMouseEventArgs e)
         {
-            if (x2 == x1)
-                return null; // Vertical line, undefined slope
-            return (y2 - y1) / (x2 - x1);
+            //All of this logic is to avoid unnecessarily updating the graphic position
+            //for ~every~ mouse move. We skip any "intermediate" points in-between rapid
+            //mouse moves.
+            lock (_lock)
+            {
+                if (_trackingMouseMove == TrackingState.NotTracking)
+                    return;
+                else
+                {
+                    if (_workingLocation.HasValue)
+                    {
+                        _lastLocation = e.ClientPoint;
+                        return;
+                    }
+                    else
+                    {
+                        _lastLocation = e.ClientPoint;
+                        _workingLocation = e.ClientPoint;
+                    }
+                }
+                _trackingMouseMove = TrackingState.Tracking;
+            }
+            //The code "inside" the QTR will execute for all points that
+            //get "buffered" or "queued". This avoids having to spin up a QTR
+            //for ~every~ point of ~every mouse move.
+
+            await QueuedTask.Run(() =>
+            {
+                while (true)
+                {
+                    System.Windows.Point? point;
+                    IDisposable graphic = null;
+                    MapPoint mouse_point = null;
+                    lock (_lock)
+                    {
+                        point = _lastLocation;
+                        _lastLocation = null;
+                        _workingLocation = point;
+                        if (point == null || !point.HasValue)
+                        {
+                            //No new points came in while we updated the overlay
+                            _workingLocation = null;
+                            break;
+                        }
+                        else if (_graphic == null)
+                        {
+                            //conflict with the mouse down,
+                            //If this happens then we are done. A new line and point will be
+                            //forthcoming from the SketchCompleted callback
+                            _trackingMouseMove = TrackingState.NotTracking;
+                            break;
+                        }
+                        graphic = _graphic;
+                        if (point.HasValue)
+                            mouse_point = this.ActiveMapView.ClientToMap(point.Value);
+                    }
+                    if (mouse_point != null)
+                    {
+                        //update the graphic overlay
+
+                        Polyline preview_line = ChamferLines(_selected_segments[0], _selected_segments[1], mouse_point);
+
+                        this.UpdateOverlay(graphic, preview_line, _dashed_line.MakeSymbolReference());
+                    }
+                }
+            });
         }
 
-        // Intended to operate on two polylines which each only contain one segment
-        private static MapPoint GetIntersectionPoint(Polyline line1, Polyline line2)
+        #region Internal Functions
+
+        //private static double? GetSlope(double x1, double y1, double x2, double y2)
+        //{
+        //    if (x2 == x1)
+        //        return null; // Vertical line, undefined slope
+        //    return (y2 - y1) / (x2 - x1);
+        //}
+
+        // Find theoretical intersection point between two segments (assumes straight lines)
+        // TODO: add case for curved segments (tangent line @ endpoint?)
+        private static MapPoint GetIntersectionPoint(InfiniteLine line1, InfiniteLine line2)
         {
             // TODO: Add case for existing intersection point
-            if (line1.SpatialReference != line2.SpatialReference)
+            if (line1.StartPoint.SpatialReference != line2.StartPoint.SpatialReference)
                 return null;
-            // Find theoretical intersection point between two segments (assumes straight line)
-            // TODO: add case for curved segments (tangent line @ endpoint?)
-            List<double?> slopes = new();
-            List<double> intercepts = new();
-            foreach (Polyline line in new[] { line1, line2 })
-            {
-                Segment line_segment = line.Parts.FirstOrDefault().FirstOrDefault();
-                double? slope = GetSlope(line_segment.StartCoordinate.X, line_segment.StartCoordinate.Y, line_segment.EndCoordinate.X, line_segment.EndCoordinate.Y);
-                slopes.Add(slope);
-                intercepts.Add
-                (
-                    (slope == null)
-                    ? line_segment.StartCoordinate.X
-                    : line_segment.StartCoordinate.Y - (slope.Value * line_segment.StartCoordinate.X)
-                );
-            }
             double int_x;
             double int_y;
             // Case: Parallel lines (also catches parallel vertical lines)
-            if (slopes[0] == slopes[1])
+            if (line1.Slope == line2.Slope)
                 return null;
             // Case: One vertical line
-            int null_idx = slopes.IndexOf(null);
-            if (null_idx != -1)
+            if (line1.Slope == null || line2.Slope == null)
             {
-                int non_null_idx = 1 - null_idx;
-                int_x = intercepts[null_idx];
-                int_y = (slopes[non_null_idx].Value * int_x) + intercepts[non_null_idx];
+                InfiniteLine vertical_line = line1 == null ? line1 : line2;
+                InfiniteLine non_vertical_line = line2 == null ? line1 : line1;
+                int_x = vertical_line.Intercept;
+                int_y = (non_vertical_line.Slope.Value * int_x) + non_vertical_line.Intercept;
             }
             // Case: No vertical lines
             else
             {
-                int_x = (intercepts[1] - intercepts[0]) / (slopes[0].Value - slopes[1].Value);
-                int_y = (slopes[0].Value * int_x) + intercepts[0];
+                int_x = (line2.Intercept - line1.Intercept) / (line1.Slope.Value - line2.Slope.Value);
+                int_y = (line1.Slope.Value * int_x) + line1.Intercept;
             }
 
-            MapPoint int_point = MapPointBuilderEx.CreateMapPoint(int_x, int_y, line1.SpatialReference);
+            MapPoint int_point = MapPointBuilderEx.CreateMapPoint(int_x, int_y, line1.StartPoint.SpatialReference);
 
             return int_point;
         }
 
         // Intended to operate on two polylines which each only contain one segment
-        private static Polyline ChamferLines(Polyline line1, Polyline line2, double length = 0)
+        private static Polyline ChamferLines(InfiniteLine line1, InfiniteLine line2, MapPoint mouse_point = null)
         {
             MapPoint intersection_point = GetIntersectionPoint(line1, line2);
-
             if (intersection_point == null)
                 return null;
-
             List<Polyline> theoretical_extensions = new();
-            foreach (Polyline line in new[] { line1, line2 })
+            foreach (InfiniteLine line in new[] { line1, line2 })
             {
-                MapPoint closest_point = line.Points
+                MapPoint closest_point = new[] {line.StartPoint, line.EndPoint}
                     .OrderBy(point => GeometryEngine.Instance.Distance(intersection_point, point))
                     .FirstOrDefault();
-                theoretical_extensions.Add(PolylineBuilderEx.CreatePolyline(new[] { closest_point, intersection_point }, line.SpatialReference));
+                theoretical_extensions.Add(PolylineBuilderEx.CreatePolyline(new[] { closest_point, intersection_point }, line.StartPoint.SpatialReference));
             }
-
+            if (mouse_point != null)
+                theoretical_extensions[1] = PolylineBuilderEx.CreatePolyline(new[] { mouse_point, intersection_point }, intersection_point.SpatialReference);
             return GeometryEngine.Instance.Union(new[] { theoretical_extensions[0], theoretical_extensions[1] }) as Polyline;
         }
 
