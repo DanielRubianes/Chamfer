@@ -1,12 +1,6 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
-<ArcGIS defaultAssembly="Chamfer.dll"
-        defaultNamespace="Chamfer"
-        xmlns="http://schemas.esri.com/DADF/Registry"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://schemas.esri.com/DADF/Registry file:///C:/Program%20Files/ArcGIS/Pro/bin/ArcGIS.Desktop.Framework.xsd">
-
+﻿<ArcGIS defaultAssembly="Chamfer.dll" defaultNamespace="Chamfer" xmlns="http://schemas.esri.com/DADF/Registry" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://schemas.esri.com/DADF/Registry file:///C:/Program%20Files/ArcGIS/Pro/bin/ArcGIS.Desktop.Framework.xsd">
   <AddInInfo id="{eccc0d2d-0070-426c-86e6-7a182fca13f0}" version="1.0" desktopVersion="3.3.52636" product="ArcGISPro">
-    <Name>Chamfer</Name>   
+    <Name>Chamfer</Name>
     <Description>Chamfer description</Description>
     <Image>Images\AddinDesktop32.png</Image>
     <Author>Danda9478</Author>
@@ -16,28 +10,15 @@
     <!-- Note subject can be one or more of these topics:
                     Content, Framework, Editing, Geodatabase, Geometry, Geoprocessing, Layouts, Map Authoring, Map Exploration -->
   </AddInInfo>
-
   <modules>
     <insertModule id="Chamfer_Module" className="Module1" autoLoad="false" caption="Module1">
-      <!-- uncomment to have the control hosted on a separate tab-->
-      <tabs>
-        <!--<tab id="Chamfer_Tab1" caption="New Tab">
-          <group refID="Chamfer_Group1"/>
-        </tab>-->
-      </tabs>
-              
-      <groups>
-        <!-- comment this out if you have no controls on the Addin tab to avoid
-              an empty group-->
-        <group id="Chamfer_Group1" caption="Group 1" appearsOnAddInTab="true">
-          <!-- host controls within groups -->
-        </group>
-      </groups>
-      
       <controls>
-        <!-- add your controls here -->
-      </controls> 
-      
+        <tool id="ChamferTool_Chamfer" caption="Chamfer" className="Chamfer" loadOnClick="true" smallImage="Images\EditingChamferTool16.png" keytip="ZZ" largeImage="Images\EditingChamferTool32.png" condition="esri_mapping_mapPane" categoryRefID="esri_editing_CommandList">
+          <tooltip heading="Chamfer">
+				  "Fillet" a chamfer<disabledText /></tooltip>
+          <content L_group="Sample Tools" />
+        </tool>
+      </controls>
     </insertModule>
   </modules>
 </ArcGIS>
