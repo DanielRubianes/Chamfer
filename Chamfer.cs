@@ -31,11 +31,7 @@ namespace Chamfer
         private IDisposable _graphic = null;
         private CIMLineSymbol _lineSymbol = null;
 
-        private ObservableCollection<Geometry> _selectedFeatures = new();
-        public ObservableCollection<Geometry> SelectedFeatures
-        {
-            get { return _selectedFeatures; }
-        }
+        private ObservableCollection<Polyline> _selectedSegments = new();
 
         private static readonly object _lock = new object();
 
@@ -85,12 +81,12 @@ namespace Chamfer
                     .OrderBy(segment => GeometryEngine.Instance.Distance(point_selection, PolylineBuilderEx.CreatePolyline(segment)))
                     .FirstOrDefault();
 
-                Geometry selected_seg_geom = PolylineBuilderEx.CreatePolyline(selected_segment) as Geometry;
+                Polyline selected_seg_geom = PolylineBuilderEx.CreatePolyline(selected_segment);
 
-                if (SelectedFeatures.Count > 1 || SelectedFeatures.Count == 0)
+                if (_selectedSegments.Count > 1 || _selectedSegments.Count == 0)
                 {
-                    SelectedFeatures.Clear();
-                    SelectedFeatures.Add(selected_seg_geom);
+                    _selectedSegments.Clear();
+                    _selectedSegments.Add(selected_seg_geom);
                     lock (_lock)
                     {
                         if (_graphic != null)
@@ -99,32 +95,52 @@ namespace Chamfer
                         _graphic = this.AddOverlay(selected_seg_geom, _lineSymbol.MakeSymbolReference());
                     }
                 }
-                else if (SelectedFeatures.Count == 1)
+                else if (_selectedSegments.Count == 1)
                 {
-                    SelectedFeatures.Add(selected_seg_geom);
-                    var merged_geoms = SelectedFeatures.Aggregate((accumulator, item) => {
-                        return GeometryEngine.Instance.Union(accumulator, item);
+                    _selectedSegments.Add(selected_seg_geom);
+                    var merged_geoms = _selectedSegments.Aggregate((accumulator, item) => {
+                        return GeometryEngine.Instance.Union(accumulator, item) as Polyline;
                     });
+                    MapPoint int_point = ChamferLines(_selectedSegments[0] as Polyline, _selectedSegments[1] as Polyline);
                     lock (_lock)
                     {
                         this.UpdateOverlay(_graphic, merged_geoms, _lineSymbol.MakeSymbolReference());
                     }
+
+                    // Deubug output int point
+                    var seg1 = _selectedSegments[0].Parts.FirstOrDefault().FirstOrDefault();
+                    var seg2 = _selectedSegments[1].Parts.FirstOrDefault().FirstOrDefault();
+                    var test_line = 
+                    GeometryEngine.Instance.Union(
+                    PolylineBuilderEx.CreatePolyline(new[] { seg1.EndPoint, int_point }, selected_segment.SpatialReference),
+                    PolylineBuilderEx.CreatePolyline(new[] { seg2.EndPoint, int_point }, selected_segment.SpatialReference)
+                    );
+                    insp.Shape = test_line;
+
+                    lock (_lock)
+                    {
+                        if (_graphic != null)
+                            _graphic.Dispose();
+
+                        _graphic = this.AddOverlay(test_line, _lineSymbol.MakeSymbolReference());
+                    }
+
                 }
 
-                //IDisposable graphic = null;
-                //lock (_lock)
+                // Edit operation syntax
+                //var op = new EditOperation()
                 //{
-                //    graphic = _graphic;
-                //}
-
-                //this.UpdateOverlay(graphic, filtered_geom, _lineSymbol.MakeSymbolReference());
-
+                //    Name = "Test Operation",
+                //    SelectModifiedFeatures = true,
+                //    SelectNewFeatures = false
+                //};
+                //op.Modify(insp);
+                //return op.Execute();
                 return true;
 
-
-                //var bufferd_point = GeometryEngine.Instance.Buffer(point_selection_center, )
-                //SpatialQueryFilter selection_type = new SpatialQueryFilter() { FilterGeometry = point_selection_center, SpatialRelationship= SpatialRelationship.Touches };
             });
+
+            
 
             return Task.FromResult(true);
         }
@@ -132,7 +148,7 @@ namespace Chamfer
         protected override Task<bool> OnToolDeactivateAsync(bool hasMapViewChanged)
         {
             _lineSymbol = null;
-            _selectedFeatures = new();
+            _selectedSegments = new();
 
             lock (_lock)
             {
@@ -145,5 +161,39 @@ namespace Chamfer
 
             return Task.FromResult(true);
         }
+
+        #region Internal Functions
+
+        // Intended to operate on two polylines which each only contain one segment
+        private static MapPoint ChamferLines(Polyline line1, Polyline line2)
+        {
+
+            if (line1.SpatialReference != line2.SpatialReference)
+                return null;
+
+            // TODO: case if lines intersect
+            //MapPoint intersect_point = GeometryEngine.Instance.Intersection(line1, line2, GeometryDimensionType.EsriGeometry0Dimension) as MapPoint;
+
+            // Find theoretical intersection point between two segments (assumes straight line)
+            // TODO: add case for curved segments (tangent line @ endpoint?)
+            List<double> slopes = new();
+            List<double> intercepts = new();
+            foreach (Polyline line in new[] { line1, line2 })
+            {
+                Segment line_segment = line.Parts.FirstOrDefault().FirstOrDefault();
+                double slope = (line_segment.EndCoordinate.Y - line_segment.StartCoordinate.Y) / (line_segment.EndCoordinate.X - line_segment.StartCoordinate.X);
+                slopes.Add(slope);
+                intercepts.Add( line_segment.StartCoordinate.Y - (slope * line_segment.StartCoordinate.X) );
+            }
+
+            double int_x = (intercepts[1] - intercepts[0]) / (slopes[0] - slopes[1]);
+            double int_y = (slopes[0] * int_x) + intercepts[0];
+
+            MapPoint int_point = MapPointBuilderEx.CreateMapPoint(int_x, int_y, line1.SpatialReference);
+
+            return int_point;
+        }
+
+        #endregion
     }
 }
