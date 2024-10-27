@@ -58,6 +58,7 @@ namespace Chamfer
             }
         }
 
+        // TODO: Implement esc handling to further mimick fillet behavior
         protected override Task<bool> OnSketchCompleteAsync(Geometry point_selection)
         {
             QueuedTask.Run(() =>
