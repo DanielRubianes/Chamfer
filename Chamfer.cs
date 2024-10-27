@@ -83,6 +83,8 @@ namespace Chamfer
 
                 Polyline selected_seg_geom = PolylineBuilderEx.CreatePolyline(selected_segment);
 
+                // Case: none selected or two segments selected
+                // TOTO: separate these cases to make two selected the commit operation case
                 if (_selectedSegments.Count > 1 || _selectedSegments.Count == 0)
                 {
                     _selectedSegments.Clear();
@@ -95,13 +97,15 @@ namespace Chamfer
                         _graphic = this.AddOverlay(selected_seg_geom, _lineSymbol.MakeSymbolReference());
                     }
                 }
+                // Case: one segment already selected
                 else if (_selectedSegments.Count == 1)
                 {
+                    MapPoint int_point = ChamferLines(_selectedSegments[0] as Polyline, selected_seg_geom as Polyline);
+                    // Case: No intersection found (parallel lines)
+                    if (int_point == null)
+                        return false;
                     _selectedSegments.Add(selected_seg_geom);
-                    var merged_geoms = _selectedSegments.Aggregate((accumulator, item) => {
-                        return GeometryEngine.Instance.Union(accumulator, item) as Polyline;
-                    });
-                    MapPoint int_point = ChamferLines(_selectedSegments[0] as Polyline, _selectedSegments[1] as Polyline);
+                    var merged_geoms = GeometryEngine.Instance.Union(_selectedSegments[0], selected_seg_geom) as Polyline;
                     lock (_lock)
                     {
                         this.UpdateOverlay(_graphic, merged_geoms, _lineSymbol.MakeSymbolReference());
@@ -112,8 +116,8 @@ namespace Chamfer
                     var seg2 = _selectedSegments[1].Parts.FirstOrDefault().FirstOrDefault();
                     var test_line = 
                     GeometryEngine.Instance.Union(
-                    PolylineBuilderEx.CreatePolyline(new[] { seg1.EndPoint, int_point }, selected_segment.SpatialReference),
-                    PolylineBuilderEx.CreatePolyline(new[] { seg2.EndPoint, int_point }, selected_segment.SpatialReference)
+                        PolylineBuilderEx.CreatePolyline(new[] { seg1.EndPoint, int_point }, selected_segment.SpatialReference),
+                        PolylineBuilderEx.CreatePolyline(new[] { seg2.EndPoint, int_point }, selected_segment.SpatialReference)
                     );
                     insp.Shape = test_line;
 
@@ -164,30 +168,60 @@ namespace Chamfer
 
         #region Internal Functions
 
+        private static double? GetSlope(double x1, double y1, double x2, double y2)
+        {
+            if (x2 == x1)
+                return null; // Vertical line, undefined slope
+            return (y2 - y1) / (x2 - x1);
+        }
+
         // Intended to operate on two polylines which each only contain one segment
-        private static MapPoint ChamferLines(Polyline line1, Polyline line2)
+        private static MapPoint ChamferLines(Polyline line1, Polyline line2, float length=0)
         {
 
             if (line1.SpatialReference != line2.SpatialReference)
                 return null;
 
-            // TODO: case if lines intersect
+            // TODO: case if lines actually intersect
             //MapPoint intersect_point = GeometryEngine.Instance.Intersection(line1, line2, GeometryDimensionType.EsriGeometry0Dimension) as MapPoint;
 
             // Find theoretical intersection point between two segments (assumes straight line)
             // TODO: add case for curved segments (tangent line @ endpoint?)
-            List<double> slopes = new();
+            List<double?> slopes = new();
             List<double> intercepts = new();
             foreach (Polyline line in new[] { line1, line2 })
             {
                 Segment line_segment = line.Parts.FirstOrDefault().FirstOrDefault();
-                double slope = (line_segment.EndCoordinate.Y - line_segment.StartCoordinate.Y) / (line_segment.EndCoordinate.X - line_segment.StartCoordinate.X);
+                double? slope = GetSlope(line_segment.StartCoordinate.X, line_segment.StartCoordinate.Y, line_segment.EndCoordinate.X, line_segment.EndCoordinate.Y);
                 slopes.Add(slope);
-                intercepts.Add( line_segment.StartCoordinate.Y - (slope * line_segment.StartCoordinate.X) );
+                intercepts.Add
+                (
+                    (slope == null)
+                    ? line_segment.StartCoordinate.X
+                    : line_segment.StartCoordinate.Y - (slope.Value * line_segment.StartCoordinate.X)
+                );
             }
 
-            double int_x = (intercepts[1] - intercepts[0]) / (slopes[0] - slopes[1]);
-            double int_y = (slopes[0] * int_x) + intercepts[0];
+            double int_x;
+            double int_y;
+
+            // Case: parallel lines (also catches parallel vertical lines)
+            if (slopes[0] == slopes[1])
+                return null;
+            // Case: one vertical line
+            int null_idx = slopes.IndexOf(null);
+            if (null_idx != -1)
+            {
+                int non_null_idx = 1 - null_idx;
+                int_x = intercepts[null_idx];
+                int_y = (slopes[non_null_idx].Value * int_x) + intercepts[non_null_idx];
+            }
+            // Case: no vertical lines
+            else
+            {
+                int_x = (intercepts[1] - intercepts[0]) / (slopes[0].Value - slopes[1].Value);
+                int_y = (slopes[0].Value * int_x) + intercepts[0];
+            }
 
             MapPoint int_point = MapPointBuilderEx.CreateMapPoint(int_x, int_y, line1.SpatialReference);
 
