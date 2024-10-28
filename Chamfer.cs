@@ -117,7 +117,7 @@ namespace Chamfer
         {
             QueuedTask.Run(() =>
             {
-                var selected_features = MapView.Active.GetFeatures(point_selection, true); // Get visually selected features from active map
+                SelectionSet selected_features = MapView.Active.GetFeatures(point_selection, true); // Get visually selected features from active map
                 // Exit if no features selected
                 if (selected_features.IsEmpty)
                     return false;
@@ -125,7 +125,7 @@ namespace Chamfer
                 var insp = new Inspector();
                 // TODO: Iterate and combine all potential segments into one list
                 // This will Allow selection through polygons
-                var features_oids = selected_features[selected_features.ToDictionary().Keys.First()];
+                IList<long> features_oids = selected_features[selected_features.ToDictionary().Keys.First()];
                 insp.Load(selected_features.ToDictionary().First().Key, features_oids.First());
                 // Exit if feature selected is annotation
                 if (insp.HasAnnotationAttributes)
