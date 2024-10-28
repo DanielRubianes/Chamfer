@@ -162,14 +162,14 @@ namespace Chamfer
                 // Case: One segment already selected
                 else if (_selected_segments.Count == 1)
                 {
-                    Polyline extensions = ChamferLines(_selected_segments[0], selected_line, point_selection as MapPoint);
+                    Polyline chamfer_geometry = ChamferLines(_selected_segments[0], selected_line, point_selection as MapPoint);
                     // Case: No intersection found (parallel lines)
-                    if (extensions == null)
+                    if (chamfer_geometry == null)
                         return false;
                     _selected_segments.Add(selected_line);
                     lock (_lock)
                     {
-                        this.UpdateOverlay(_graphic, extensions, _dashed_line.MakeSymbolReference());
+                        this.UpdateOverlay(_graphic, chamfer_geometry, _dashed_line.MakeSymbolReference());
                     }
                     _trackingMouseMove = TrackingState.CanTrack;
                 }
