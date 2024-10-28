@@ -137,8 +137,9 @@ namespace Chamfer
                 if (outline_geom == null) // Exit if null or non-line geometry
                     return false;
 
-                // Find closest segment (polyline part) to the selection point
+                // Project selected feature to mapspace coordinate system, using selection point
                 Polyline projected_selection = GeometryEngine.Instance.Project(outline_geom, point_selection.SpatialReference) as Polyline;
+                // Find closest segment (polyline part) to the selection point
                 Segment selected_segment = projected_selection.Parts
                     .SelectMany(segment => segment).ToList()
                     .OrderBy(segment => GeometryEngine.Instance.Distance(point_selection, PolylineBuilderEx.CreatePolyline(segment, segment.SpatialReference)))
