@@ -123,6 +123,8 @@ namespace Chamfer
                     return false;
 
                 var insp = new Inspector();
+                // TODO: Iterate and combine all potential segments into one list
+                // This will Allow selection through polygons
                 var features_oids = selected_features[selected_features.ToDictionary().Keys.First()];
                 insp.Load(selected_features.ToDictionary().First().Key, features_oids.First());
                 // Exit if feature selected is annotation
