@@ -117,11 +117,19 @@ namespace Chamfer
         {
             QueuedTask.Run(() =>
             {
+                // TODO: Find out why this can only select certain feature layers in map space
                 IGeometryEngine geo = GeometryEngine.Instance;
-                SelectionSet selected_features = MapView.Active.GetFeatures(point_selection, true); // Get visually selected features from active map
+                SelectionSet selected_features = MapView.Active.GetFeaturesEx(point_selection, true); // Get visually selected features from active map
                 // Exit if no features selected
                 if (selected_features.IsEmpty)
+                {
+                    MessageBox.Show("No selection!");
                     return false;
+                }
+
+                MapView.Active.FlashFeature(selected_features);
+                return false;
+
 
                 var insp = new Inspector();
                 // TODO: Iterate and combine all potential segments into one list
@@ -129,8 +137,8 @@ namespace Chamfer
                 List<Segment> potential_selected_segments = new();
                 foreach (KeyValuePair<MapMember, List<long>> feature in selected_features.ToDictionary())
                 {
-                    if (feature.Key.SupportsMetadata)
-                        MessageBox.Show(feature.Key.GetMetadata());
+                    //if (feature.Key.SupportsMetadata)
+                    //    MessageBox.Show(feature.Key.GetMetadata());
 
                     insp.Load(feature.Key, feature.Value);
 
@@ -147,8 +155,8 @@ namespace Chamfer
                         continue;
 
                     // Project selected feature to mapspace coordinate system, using selection point
-                    // Improper projections?
-                    ProjectionTransformation map_transormation = ArcGIS.Core.Geometry.ProjectionTransformation.Create(insp.Shape.SpatialReference, point_selection.SpatialReference);
+                    // TODO: Find out why map projection does not always match this projection
+                    ProjectionTransformation map_transormation = ArcGIS.Core.Geometry.ProjectionTransformation.Create(insp.Shape.SpatialReference, MapView.Active.Map.SpatialReference);
                     Polyline projected_line = geo.ProjectEx(shape_as_polyline, map_transormation) as Polyline;
 
                     // Add all possible selected segments to a list
