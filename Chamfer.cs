@@ -117,6 +117,7 @@ namespace Chamfer
         {
             QueuedTask.Run(() =>
             {
+                IGeometryEngine geo = GeometryEngine.Instance;
                 SelectionSet selected_features = MapView.Active.GetFeatures(point_selection, true); // Get visually selected features from active map
                 // Exit if no features selected
                 if (selected_features.IsEmpty)
@@ -125,27 +126,61 @@ namespace Chamfer
                 var insp = new Inspector();
                 // TODO: Iterate and combine all potential segments into one list
                 // This will Allow selection through polygons
-                IList<long> features_oids = selected_features[selected_features.ToDictionary().Keys.First()];
-                insp.Load(selected_features.ToDictionary().First().Key, features_oids.First());
-                // Exit if feature selected is annotation
-                if (insp.HasAnnotationAttributes)
-                    return false;
+                List<Segment> potential_selected_segments = new();
+                foreach (KeyValuePair<MapMember, List<long>> feature in selected_features.ToDictionary())
+                {
+                    if (feature.Key.SupportsMetadata)
+                        MessageBox.Show(feature.Key.GetMetadata());
 
-                Polyline outline_geom =
-                    insp.Shape.GeometryType == GeometryType.Polygon
-                    ? GeometryEngine.Instance.Boundary(insp.Shape) as Polyline
-                    : insp.Shape as Polyline;
+                    insp.Load(feature.Key, feature.Value);
 
-                if (outline_geom == null) // Exit if null or non-line geometry
-                    return false;
+                    // Exit if feature selected is annotation
+                    if (insp.HasAnnotationAttributes)
+                        continue;
 
-                // Project selected feature to mapspace coordinate system, using selection point
-                Polyline projected_selection = GeometryEngine.Instance.Project(outline_geom, point_selection.SpatialReference) as Polyline;
-                // Find closest segment (polyline part) to the selection point
-                Segment selected_segment = projected_selection.Parts
-                    .SelectMany(segment => segment).ToList()
-                    .OrderBy(segment => GeometryEngine.Instance.Distance(point_selection, PolylineBuilderEx.CreatePolyline(segment, segment.SpatialReference)))
+                    Polyline shape_as_polyline = insp.Shape.GeometryType == GeometryType.Polygon
+                        ? geo.Boundary(insp.Shape) as Polyline
+                        : insp.Shape as Polyline;
+
+                    // Exit if null or non-line geometry
+                    if (shape_as_polyline == null)
+                        continue;
+
+                    // Project selected feature to mapspace coordinate system, using selection point
+                    // Improper projections?
+                    ProjectionTransformation map_transormation = ArcGIS.Core.Geometry.ProjectionTransformation.Create(insp.Shape.SpatialReference, point_selection.SpatialReference);
+                    Polyline projected_line = geo.ProjectEx(shape_as_polyline, map_transormation) as Polyline;
+
+                    // Add all possible selected segments to a list
+                    potential_selected_segments.AddRange(projected_line.Parts.SelectMany(segment => segment).ToList());
+                }
+
+                //IList<long> features_oids = selected_features[selected_features.ToDictionary().Keys.First()];
+                //insp.Load(selected_features.ToDictionary().First().Key, features_oids.First());
+                //// Exit if feature selected is annotation
+                //if (insp.HasAnnotationAttributes)
+                //    return false;
+
+                //Polyline outline_geom =
+                //    insp.Shape.GeometryType == GeometryType.Polygon
+                //    ? geo.Boundary(insp.Shape) as Polyline
+                //    : insp.Shape as Polyline;
+
+                //if (outline_geom == null) // Exit if null or non-line geometry
+                //    return false;
+
+                //// Project selected feature to mapspace coordinate system, using selection point
+                //Polyline projected_selection = geo.Project(outline_geom, point_selection.SpatialReference) as Polyline;
+                //// Find closest segment (polyline part) to the selection point
+                //Segment selected_segment = projected_selection.Parts
+                //    .SelectMany(segment => segment).ToList()
+                //    .OrderBy(segment => geo.Distance(point_selection, PolylineBuilderEx.CreatePolyline(segment, segment.SpatialReference)))
+                //    .FirstOrDefault();
+
+                Segment selected_segment = potential_selected_segments
+                    .OrderBy(segment => geo.Distance(point_selection, PolylineBuilderEx.CreatePolyline(segment, segment.SpatialReference)))
                     .FirstOrDefault();
+
                 InfiniteLine selected_line = new InfiniteLine(selected_segment);
 
                 // Case: No prior selection
