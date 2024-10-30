@@ -94,7 +94,7 @@ namespace Chamfer
         {
             IsSketchTool = true;
             SketchType = SketchGeometryType.Point;
-            SketchOutputMode = SketchOutputMode.Map;
+            SketchOutputMode = SketchOutputMode.Screen;
             UseSnapping = true;
         }
 
@@ -118,12 +118,14 @@ namespace Chamfer
             QueuedTask.Run(() =>
             {
                 // TODO: Find out why this can only select certain feature layers in map space
+                // This seems to be inconsistent in our projects. Try iterating through all visible layers in contents and see if we can get selected segments from there.
                 IGeometryEngine geo = GeometryEngine.Instance;
-                SelectionSet selected_features = MapView.Active.GetFeaturesEx(point_selection, true); // Get visually selected features from active map
+                Geometry buffered_point = geo.Buffer(point_selection, 110);
+                SelectionSet selected_features = MapView.Active.GetFeaturesEx(buffered_point, false, false); // Get visually selected features from active map
                 // Exit if no features selected
                 if (selected_features.IsEmpty)
                 {
-                    MessageBox.Show("No selection!");
+                    MessageBox.Show(selected_features.Count.ToString());
                     return false;
                 }
 
