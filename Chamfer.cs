@@ -13,6 +13,7 @@ using ArcGIS.Desktop.Framework.Contracts;
 using ArcGIS.Desktop.Framework.Dialogs;
 using ArcGIS.Desktop.Framework.Threading.Tasks;
 using ArcGIS.Desktop.Internal.Core;
+using ArcGIS.Desktop.Internal.Core.Behaviors;
 using ArcGIS.Desktop.KnowledgeGraph;
 using ArcGIS.Desktop.Layouts;
 using ArcGIS.Desktop.Mapping;
@@ -119,9 +120,26 @@ namespace Chamfer
             {
                 // TODO: Find out why this can only select certain feature layers in map space
                 // This seems to be inconsistent in our projects. Try iterating through all visible layers in contents and see if we can get selected segments from there.
+                // Time performance difference
                 IGeometryEngine geo = GeometryEngine.Instance;
-                Geometry buffered_point = geo.Buffer(point_selection, 110);
-                SelectionSet selected_features = MapView.Active.GetFeaturesEx(buffered_point, false, false); // Get visually selected features from active map
+                //Geometry buffered_point = geo.Buffer(point_selection, 110);
+                SelectionSet selected_features = MapView.Active.GetFeaturesEx(point_selection, false, false); // Get visually selected features from active map
+
+                IEnumerable<FeatureLayer> all_features = MapView.Active.Map.GetMapMembersAsFlattenedList().OfType<FeatureLayer>();
+
+                var spatial_filter = new SpatialQueryFilter()
+                {
+                    FilterGeometry = point_selection,
+                    SpatialRelationship = SpatialRelationship.Intersects
+                };
+
+                foreach (FeatureLayer feature_layer in all_features)
+                {
+                    if (!feature_layer.IsVisible)
+                        continue;
+                    RowCursor cursor = feature_layer.Search(spatial_filter);
+                }
+
                 // Exit if no features selected
                 if (selected_features.IsEmpty)
                 {
