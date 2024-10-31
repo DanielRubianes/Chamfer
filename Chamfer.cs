@@ -95,7 +95,7 @@ namespace Chamfer
         {
             IsSketchTool = true;
             SketchType = SketchGeometryType.Point;
-            SketchOutputMode = SketchOutputMode.Screen;
+            SketchOutputMode = SketchOutputMode.Map;
             UseSnapping = true;
         }
 
@@ -122,8 +122,9 @@ namespace Chamfer
                 // This seems to be inconsistent in our projects. Try iterating through all visible layers in contents and see if we can get selected segments from there.
                 // Time performance difference
                 IGeometryEngine geo = GeometryEngine.Instance;
-                //Geometry buffered_point = geo.Buffer(point_selection, 110);
+
                 SelectionSet selected_features = MapView.Active.GetFeaturesEx(point_selection, false, false); // Get visually selected features from active map
+                MapView.Active.FlashFeature(selected_features);
 
                 IEnumerable<FeatureLayer> all_features = MapView.Active.Map.GetMapMembersAsFlattenedList().OfType<FeatureLayer>();
 
@@ -133,55 +134,74 @@ namespace Chamfer
                     SpatialRelationship = SpatialRelationship.Intersects
                 };
 
+                var insp = new Inspector();
+                List<Segment> potential_selected_segments = new();
                 foreach (FeatureLayer feature_layer in all_features)
                 {
+                    // Skip layers not visible
                     if (!feature_layer.IsVisible)
                         continue;
+
                     RowCursor cursor = feature_layer.Search(spatial_filter);
+                    while (cursor.MoveNext())
+                    {
+                        using (Row row = cursor.Current)
+                        {
+                            insp.Load(row);
+
+                            // Skip annotations
+                            // TODO: Look into a way to test for this before iteration
+                            if (insp.HasAnnotationAttributes)
+                                break;
+
+                            // TODO: Test for shapetype before iteration
+                            Polyline shape_as_polyline = insp.Shape.GeometryType == GeometryType.Polygon
+                                ? geo.Boundary(insp.Shape) as Polyline
+                                : insp.Shape as Polyline;
+
+                            // Skip non-polyline or null geometry
+                            if (shape_as_polyline == null)
+                                continue;
+
+                            //  ProjectionTransformation map_transormation = ArcGIS.Core.Geometry.ProjectionTransformation.Create(insp.Shape.SpatialReference, MapView.Active.Map.SpatialReference);
+                            Polyline projected_line = geo.Project(shape_as_polyline, point_selection.SpatialReference) as Polyline;
+
+                            // Add all possible selected segments to a list
+                            potential_selected_segments.AddRange(projected_line.Parts.SelectMany(segment => segment).ToList());
+                        }
+                    }
                 }
 
-                // Exit if no features selected
-                if (selected_features.IsEmpty)
-                {
-                    MessageBox.Show(selected_features.Count.ToString());
-                    return false;
-                }
 
-                MapView.Active.FlashFeature(selected_features);
-                return false;
+                // TODO: Remove this old implementation
+                //List<Segment> potential_selected_segments = new();
+                //foreach (KeyValuePair<MapMember, List<long>> feature in selected_features.ToDictionary())
+                //{
+                //    //if (feature.Key.SupportsMetadata)
+                //    //    MessageBox.Show(feature.Key.GetMetadata());
 
+                //    insp.Load(feature.Key, feature.Value);
 
-                var insp = new Inspector();
-                // TODO: Iterate and combine all potential segments into one list
-                // This will Allow selection through polygons
-                List<Segment> potential_selected_segments = new();
-                foreach (KeyValuePair<MapMember, List<long>> feature in selected_features.ToDictionary())
-                {
-                    //if (feature.Key.SupportsMetadata)
-                    //    MessageBox.Show(feature.Key.GetMetadata());
+                //    // Exit if feature selected is annotation
+                //    if (insp.HasAnnotationAttributes)
+                //        continue;
 
-                    insp.Load(feature.Key, feature.Value);
+                //    Polyline shape_as_polyline = insp.Shape.GeometryType == GeometryType.Polygon
+                //        ? geo.Boundary(insp.Shape) as Polyline
+                //        : insp.Shape as Polyline;
 
-                    // Exit if feature selected is annotation
-                    if (insp.HasAnnotationAttributes)
-                        continue;
+                //    // Exit if null or non-line geometry
+                //    if (shape_as_polyline == null)
+                //        continue;
 
-                    Polyline shape_as_polyline = insp.Shape.GeometryType == GeometryType.Polygon
-                        ? geo.Boundary(insp.Shape) as Polyline
-                        : insp.Shape as Polyline;
+                //    // Project selected feature to mapspace coordinate system, using selection point
+                //    // TODO: Find out why map projection does not always match this projection
+                //    ProjectionTransformation map_transormation = ArcGIS.Core.Geometry.ProjectionTransformation.Create(insp.Shape.SpatialReference, MapView.Active.Map.SpatialReference);
+                //    Polyline projected_line = geo.ProjectEx(shape_as_polyline, map_transormation) as Polyline;
 
-                    // Exit if null or non-line geometry
-                    if (shape_as_polyline == null)
-                        continue;
-
-                    // Project selected feature to mapspace coordinate system, using selection point
-                    // TODO: Find out why map projection does not always match this projection
-                    ProjectionTransformation map_transormation = ArcGIS.Core.Geometry.ProjectionTransformation.Create(insp.Shape.SpatialReference, MapView.Active.Map.SpatialReference);
-                    Polyline projected_line = geo.ProjectEx(shape_as_polyline, map_transormation) as Polyline;
-
-                    // Add all possible selected segments to a list
-                    potential_selected_segments.AddRange(projected_line.Parts.SelectMany(segment => segment).ToList());
-                }
+                //    // Add all possible selected segments to a list
+                //    potential_selected_segments.AddRange(projected_line.Parts.SelectMany(segment => segment).ToList());
+                //}
 
                 //IList<long> features_oids = selected_features[selected_features.ToDictionary().Keys.First()];
                 //insp.Load(selected_features.ToDictionary().First().Key, features_oids.First());
