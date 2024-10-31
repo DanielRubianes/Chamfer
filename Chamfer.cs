@@ -22,6 +22,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Reflection.Metadata.Ecma335;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography.Xml;
 using System.Text;
@@ -61,6 +62,7 @@ namespace Chamfer
         // TODO: Implement double.PositiveInfinity rather than null railroad
         // TODO: Throw error for line with more than two points
         // TODO: Throw error for mismatched SpatialReference between points
+        // TODO: Get endpoint tangent for arcs?
         {
             public readonly Polyline Polyline;
             public readonly Segment Segment;
@@ -122,11 +124,13 @@ namespace Chamfer
                 IGeometryEngine geo = GeometryEngine.Instance;
 
                 // Remove if we cannot find a way to make this work
-                SelectionSet selected_features = MapView.Active.GetFeaturesEx(point_selection, false, false); // Get visually selected features from active map
-                MapView.Active.FlashFeature(selected_features);
+                //SelectionSet selected_features = MapView.Active.GetFeaturesEx(point_selection, false, false); // Get visually selected features from active map
+                //MapView.Active.FlashFeature(selected_features);
 
                 IEnumerable<FeatureLayer> all_features = MapView.Active.Map.GetMapMembersAsFlattenedList().OfType<FeatureLayer>();
 
+                // This spatial relationship seems to miss many feature classes in houston template
+                // TODO: Methodically test this
                 var spatial_filter = new SpatialQueryFilter()
                 {
                     FilterGeometry = point_selection,
@@ -137,13 +141,18 @@ namespace Chamfer
                 List<Segment> potential_selected_segments = new();
                 foreach (FeatureLayer feature_layer in all_features)
                 {
+                    FeatureClass feature_class = feature_layer.GetFeatureClass();
+
                     // Skip layers not visible
                     if (!feature_layer.IsVisible)
                         continue;
 
                     RowCursor cursor = feature_layer.Search(spatial_filter);
+                    if (cursor == null)
+                        continue;
                     while (cursor.MoveNext())
                     {
+                        //MessageBox.Show(feature_layer.ToString());
                         using (Row row = cursor.Current)
                         {
                             insp.Load(row);
@@ -174,6 +183,9 @@ namespace Chamfer
                 Segment selected_segment = potential_selected_segments
                     .OrderBy(segment => geo.Distance(point_selection, PolylineBuilderEx.CreatePolyline(segment, segment.SpatialReference)))
                     .FirstOrDefault();
+
+                if (selected_segment == null)
+                    return false;
 
                 InfiniteLine selected_line = new InfiniteLine(selected_segment);
 
@@ -363,30 +375,78 @@ namespace Chamfer
             if (mouse_point == null)
                 return null;
             var lines = new[] { line1, line2 };
-            double shortest_distance = lines.Min(line => line.Segment.Length);
-            List<MapPoint> chamfer_ratio_points = new();
-            foreach (InfiniteLine line in lines)
-            {
-                MapPoint furthest_point = new[] { line.StartPoint, line.EndPoint }
-                    .OrderByDescending(point => geo.Distance(intersection_point, point))
-                    .FirstOrDefault();
+            //double shortest_distance = lines.Min(line => line.Segment.Length);
+            //List<MapPoint> chamfer_ratio_points = new();
+            //(LeftOrRightSide, LeftOrRightSide) quadrant = new();
+            //foreach (InfiniteLine line in lines)
+            //{
+            //    MapPoint furthest_point = new[] { line.StartPoint, line.EndPoint }
+            //        .OrderByDescending(point => geo.Distance(intersection_point, point))
+            //        .FirstOrDefault();
+            //    LineSegment intersection_segment = LineBuilderEx.CreateLineSegment(intersection_point, furthest_point, intersection_point.SpatialReference);
 
-                LineSegment intersection_segmenet = LineBuilderEx.CreateLineSegment(intersection_point, furthest_point, intersection_point.SpatialReference);
+            //    LeftOrRightSide side;
+            //    GeometryEngine.Instance.QueryPointAndDistance(intersection_segment, SegmentExtensionType.ExtendTangents, mouse_point, AsRatioOrLength.AsRatio, out _, out _, out side);
+            //    quadrant.Add(side);
 
-                double intersection_angle = intersection_segmenet.Angle;
+            //    double intersection_angle = intersection_segment.Angle;
+            //    chamfer_ratio_points.Add(geo.ConstructPointFromAngleDistance(intersection_point, intersection_angle, shortest_distance, line.SpatialReference));
+            //}
 
-                chamfer_ratio_points.Add(geo.ConstructPointFromAngleDistance(intersection_point, intersection_angle, shortest_distance, line.SpatialReference));
-            }
+            MapPoint line1_point = geo.QueryPointAndDistance
+            (
+                line1.Segment,
+                SegmentExtensionType.ExtendTangents,
+                mouse_point,
+                AsRatioOrLength.AsLength,
+                out double distance1,
+                out double normal_length,
+                out LeftOrRightSide side
+            );
+            normal_length *= (side == LeftOrRightSide.LeftSide) ? -1 : 1;
+            LineSegment line1_normal = geo.QueryNormal(line1.Segment, SegmentExtensionType.ExtendTangents, distance1, AsRatioOrLength.AsLength, normal_length);
 
-            double chamfer_angle = LineBuilderEx.CreateLineSegment(chamfer_ratio_points[0], chamfer_ratio_points[1], line1.SpatialReference).Angle;
+            MapPoint line2_point = geo.QueryPointAndDistance
+            (
+                line2.Segment,
+                SegmentExtensionType.ExtendTangents,
+                mouse_point,
+                AsRatioOrLength.AsLength,
+                out double distance2,
+                out normal_length,
+                out side
+            );
+            normal_length *= (side == LeftOrRightSide.LeftSide) ? -1 : 1;
+            LineSegment line2_normal = geo.QueryNormal(line2.Segment, SegmentExtensionType.ExtendTangents, distance2, AsRatioOrLength.AsLength, normal_length);
 
-            MapPoint mouse_chamfer_point = geo.ConstructPointFromAngleDistance(mouse_point, chamfer_angle, shortest_distance, line1.SpatialReference);
+            double chamfer_angle = LineBuilderEx.CreateLineSegment(line1_normal.EndPoint, line2_normal.EndPoint, line1.SpatialReference).Angle;
+
+            //if (sides[0] == sides[1])
+            //    chamfer_angle += (Math.PI / 2);
+
+            double min_distance = new[] { distance1, distance2 }.Min();
+
+            if (min_distance <= 0)
+                return null;
+
+            MapPoint mouse_chamfer_point = geo.ConstructPointFromAngleDistance(mouse_point, chamfer_angle, min_distance, line1.SpatialReference);
 
             InfiniteLine chamfer_line = new InfiniteLine(mouse_point, mouse_chamfer_point);
 
             var int_pt1 = GetIntersectionPoint(line1, chamfer_line);
+            MapPoint end_pt1 = new[] { line1.StartPoint, line1.EndPoint }
+                .OrderBy(point => geo.Distance(mouse_point, point))
+                .FirstOrDefault();
             var int_pt2 = GetIntersectionPoint(line2, chamfer_line);
-            return PolylineBuilderEx.CreatePolyline(new[] { int_pt1, int_pt2 }, intersection_point.SpatialReference);
+            MapPoint end_pt2 = new[] { line2.StartPoint, line2.EndPoint }
+                .OrderBy(point => geo.Distance(mouse_point, point))
+                .FirstOrDefault();
+            Polyline cross_line = PolylineBuilderEx.CreatePolyline(new[] { int_pt1, int_pt2 }, intersection_point.SpatialReference);
+
+            Polyline line1_connection = PolylineBuilderEx.CreatePolyline(new[] { end_pt1, int_pt1 }, intersection_point.SpatialReference);
+            Polyline line2_connection = PolylineBuilderEx.CreatePolyline(new[] { end_pt2, int_pt2 }, intersection_point.SpatialReference);
+
+            return geo.Union(new[] { line1_connection, cross_line, line2_connection }) as Polyline;
 
             // Use this to determine quadrant, based on intersection - endpoint lines
             // If in outer two quadrants, rotate chamfer angle 90 degrees
