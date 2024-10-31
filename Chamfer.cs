@@ -29,6 +29,7 @@ using System.Threading.Tasks;
 using System.Windows.Media;
 using static System.Formats.Asn1.AsnWriter;
 using Geometry = ArcGIS.Core.Geometry.Geometry;
+using LineSegment = ArcGIS.Core.Geometry.LineSegment;
 
 namespace Chamfer
 {
@@ -118,11 +119,9 @@ namespace Chamfer
         {
             QueuedTask.Run(() =>
             {
-                // TODO: Find out why this can only select certain feature layers in map space
-                // This seems to be inconsistent in our projects. Try iterating through all visible layers in contents and see if we can get selected segments from there.
-                // Time performance difference
                 IGeometryEngine geo = GeometryEngine.Instance;
 
+                // Remove if we cannot find a way to make this work
                 SelectionSet selected_features = MapView.Active.GetFeaturesEx(point_selection, false, false); // Get visually selected features from active map
                 MapView.Active.FlashFeature(selected_features);
 
@@ -371,10 +370,12 @@ namespace Chamfer
                 MapPoint furthest_point = new[] { line.StartPoint, line.EndPoint }
                     .OrderByDescending(point => geo.Distance(intersection_point, point))
                     .FirstOrDefault();
-                // I wish there  was a better way
-                double angle = LineBuilderEx.CreateLineSegment(intersection_point, furthest_point, intersection_point.SpatialReference).Angle;
 
-                chamfer_ratio_points.Add(geo.ConstructPointFromAngleDistance(intersection_point, angle, shortest_distance, line.SpatialReference));
+                LineSegment intersection_segmenet = LineBuilderEx.CreateLineSegment(intersection_point, furthest_point, intersection_point.SpatialReference);
+
+                double intersection_angle = intersection_segmenet.Angle;
+
+                chamfer_ratio_points.Add(geo.ConstructPointFromAngleDistance(intersection_point, intersection_angle, shortest_distance, line.SpatialReference));
             }
 
             double chamfer_angle = LineBuilderEx.CreateLineSegment(chamfer_ratio_points[0], chamfer_ratio_points[1], line1.SpatialReference).Angle;
