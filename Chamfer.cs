@@ -27,6 +27,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography.Xml;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Media;
 using static System.Formats.Asn1.AsnWriter;
 using Geometry = ArcGIS.Core.Geometry.Geometry;
@@ -395,41 +396,15 @@ namespace Chamfer
                 chamfer_ratio_points.Add(geo.ConstructPointFromAngleDistance(intersection_point, intersection_angle, shortest_distance, line.SpatialReference));
             }
 
-            //MapPoint line1_point = geo.QueryPointAndDistance
-            //(
-            //    line1.Segment,
-            //    SegmentExtensionType.ExtendTangents,
-            //    mouse_point,
-            //    AsRatioOrLength.AsLength,
-            //    out double distance1,
-            //    out double normal_length,
-            //    out LeftOrRightSide side
-            //);
-            //normal_length *= (side == LeftOrRightSide.LeftSide) ? -1 : 1;
-            //LineSegment line1_normal = geo.QueryNormal(line1.Segment, SegmentExtensionType.ExtendTangents, distance1, AsRatioOrLength.AsLength, normal_length);
-
-            //MapPoint line2_point = geo.QueryPointAndDistance
-            //(
-            //    line2.Segment,
-            //    SegmentExtensionType.ExtendTangents,
-            //    mouse_point,
-            //    AsRatioOrLength.AsLength,
-            //    out double distance2,
-            //    out normal_length,
-            //    out side
-            //);
-            //normal_length *= (side == LeftOrRightSide.LeftSide) ? -1 : 1;
-            //LineSegment line2_normal = geo.QueryNormal(line2.Segment, SegmentExtensionType.ExtendTangents, distance2, AsRatioOrLength.AsLength, normal_length);
+            // Proof of concept
+            Vector line1_test = new(line1.EndPoint.X - line1.StartPoint.X, line1.EndPoint.Y - line1.EndPoint.Y);
+            Vector x_axis = new(1, 1);
+            Vector.AngleBetween(line1_test, x_axis);
 
             double chamfer_angle = LineBuilderEx.CreateLineSegment(chamfer_ratio_points[0], chamfer_ratio_points[1], line1.SpatialReference).Angle;
 
             if (sides[0] == sides[1])
                 chamfer_angle += (Math.PI / 2);
-
-            //double min_distance = new[] { distance1, distance2 }.Min();
-
-            //if (shortest_distance <= 0)
-            //    return null;
 
             MapPoint mouse_chamfer_point = geo.ConstructPointFromAngleDistance(mouse_point, chamfer_angle, shortest_distance, mouse_point.SpatialReference);
 
