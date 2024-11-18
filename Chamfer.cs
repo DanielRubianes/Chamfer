@@ -53,7 +53,7 @@ namespace Chamfer
         private CIMLineSymbol _dashed_line = null;
 
         // List < (InfiniteLine bases on selected segment, feature layer name as string) >
-        private List< (InfiniteLine, string) > _selected_segments = new();
+        private List<InfiniteLine> _selected_segments = new();
 
         private System.Windows.Point? _lastLocation = null;
         private System.Windows.Point? _workingLocation = null;
@@ -76,8 +76,10 @@ namespace Chamfer
             public readonly SpatialReference SpatialReference;
             public readonly double? Slope;
             public readonly double Intercept;
-            public string FeatureLayerName = null;
 
+            // Optional fields
+            public string FeatureLayerName = null;
+            public string OID = null;
 
             public InfiniteLine(Polyline line) : this(line.Points[0], line.Points[^1], line) { }
             public InfiniteLine(Segment seg) : this(seg.StartPoint, seg.EndPoint, null, seg) { }
@@ -124,7 +126,76 @@ namespace Chamfer
         {
             QueuedTask.Run(() =>
             {
+                String test_str = "";
                 IGeometryEngine geo = GeometryEngine.Instance;
+                // Case: Two segments already selected
+                // This is a stub to allow repeated testing of initial selection
+                // TODO: Move to top
+                if (_selected_segments.Count > 1)
+                {
+                    QueuedTask.Run(() =>
+                    {
+                        FeatureLayer layer1 = MapView.Active.Map
+                            .GetMapMembersAsFlattenedList().OfType<FeatureLayer>()
+                            .Where(layer => layer.Name == _selected_segments[0].FeatureLayerName)
+                            .FirstOrDefault();
+                        FeatureLayer layer2 = MapView.Active.Map
+                            .GetMapMembersAsFlattenedList().OfType<FeatureLayer>()
+                            .Where(layer => layer.Name == _selected_segments[1].FeatureLayerName)
+                            .FirstOrDefault();
+                        foreach (FeatureLayer feature_layer in new[] { layer1, layer2 })
+                        {
+                            var OIDFilter = new QueryFilter()
+                            {
+                                WhereClause = $"WHERE ObjectID = {_selected_segments[0].OID}"
+                            };
+
+                            FeatureClass feature_class = feature_layer.GetFeatureClass();
+
+                            // Skip layers not visible
+                            if (!feature_layer.IsVisible)
+                                continue;
+
+                            RowCursor cursor = layer1.Search(OIDFilter);
+                            if (cursor == null)
+                                continue;
+                            var insp = new Inspector();
+                            while (cursor.MoveNext())
+                            {
+                                using (Row row = cursor.Current)
+                                {
+                                    insp.Load(row);
+
+                                    // TODO also iterate through polyines and remove geometry
+                                    //insp.Shape = geo.Difference(insp.Shape)
+                                }
+                            }
+                            // Edit operation syntax
+                            var op = new EditOperation()
+                            {
+                                Name = "Test Operation",
+                                SelectModifiedFeatures = true,
+                                SelectNewFeatures = false
+                            };
+                            op.Modify(insp);
+                            op.Execute();
+                        }
+
+                        // This spatial relationship seems to miss many feature classes in houston template
+                        // TODO: Methodically test this
+
+                        test_str += _selected_segments[0].FeatureLayerName + "\n" + _selected_segments[1].FeatureLayerName;
+                        ArcGIS.Desktop.Framework.Dialogs.MessageBox.Show(test_str);
+                    });
+
+                    _selected_segments.Clear();
+                    lock (_lock)
+                    {
+                        if (_graphic != null)
+                            _graphic.Dispose();
+                    }
+                    _trackingMouseMove = TrackingState.NotTracking;
+                }
 
                 // Remove if we cannot find a way to make this work
                 //SelectionSet selected_features = MapView.Active.GetFeaturesEx(point_selection, false, false); // Get visually selected features from active map
@@ -141,8 +212,7 @@ namespace Chamfer
                 };
 
                 var insp = new Inspector();
-                List<(InfiniteLine, string)> potential_selected_segments = new();
-                String test_str = "";
+                List<(InfiniteLine, string, string)> potential_selected_segments = new();
                 foreach (FeatureLayer feature_layer in all_features)
                 {
                     FeatureClass feature_class = feature_layer.GetFeatureClass();
@@ -188,7 +258,7 @@ namespace Chamfer
                             potential_selected_segments.AddRange(
                                 projected_line.Parts
                                 .SelectMany(segment => segment)
-                                .Select( segment => ( new InfiniteLine(segment), feature_layer.Name.ToString() ) ).ToList()
+                                .Select( segment => ( new InfiniteLine(segment), feature_layer.Name.ToString(), row.GetObjectID().ToString() ) ).ToList()
                             );
                         }
                     }
@@ -197,83 +267,45 @@ namespace Chamfer
                 // Debug output; Remove
                 //ArcGIS.Desktop.Framework.Dialogs.MessageBox.Show(test_str);
 
-                (InfiniteLine, string) closest_segment = potential_selected_segments
+                (InfiniteLine closest_segment, string FCName, string OID) = potential_selected_segments
                     .OrderBy(item => geo.Distance(point_selection, item.Item1.Polyline))
                     .FirstOrDefault();
 
-                if (closest_segment.Item1 == null)
+                InfiniteLine selected_segment = closest_segment;
+
+                if (selected_segment == null)
                     return false;
 
-                //InfiniteLine selected_line = closest_segment.Item1;
+                selected_segment.FeatureLayerName = FCName;
+                selected_segment.OID = OID;
 
                 // Case: No prior selection
                 if (_selected_segments.Count == 0)
                 {
                     _selected_segments.Clear();
-                    _selected_segments.Add(closest_segment);
+                    _selected_segments.Add(selected_segment);
                     lock (_lock)
                     {
                         if (_graphic != null)
                             _graphic.Dispose();
-                        _graphic = this.AddOverlay(closest_segment.Item1.Polyline, _solid_line.MakeSymbolReference());
+                        _graphic = this.AddOverlay(selected_segment.Polyline, _solid_line.MakeSymbolReference());
                     }
                     _trackingMouseMove = TrackingState.NotTracking;
                 }
                 // Case: One segment already selected
                 else if (_selected_segments.Count == 1)
                 {
-                    Polyline chamfer_geometry = ChamferLines(_selected_segments[0].Item1, closest_segment.Item1, point_selection as MapPoint);
+                    Polyline chamfer_geometry = ChamferLines(_selected_segments[0], selected_segment, point_selection as MapPoint);
                     // Case: No intersection found (parallel lines)
                     if (chamfer_geometry == null)
                         return false;
-                    _selected_segments.Add(closest_segment);
+                    _selected_segments.Add(selected_segment);
                     lock (_lock)
                     {
                         this.UpdateOverlay(_graphic, chamfer_geometry, _dashed_line.MakeSymbolReference());
                     }
                     _trackingMouseMove = TrackingState.CanTrack;
                 }
-                // Case: Two segments already selected
-                // This is a stub to allow repeated testing of initial selection
-                else if (_selected_segments.Count > 1)
-                {
-                    QueuedTask.Run(() =>
-                    {
-                        FeatureLayer layer1 = MapView.Active.Map
-                            .GetMapMembersAsFlattenedList().OfType<FeatureLayer>()
-                            .Where(layer => layer.Name == _selected_segments[0].Item2)
-                            .FirstOrDefault();
-
-                        FeatureLayer layer2 = MapView.Active.Map
-                            .GetMapMembersAsFlattenedList().OfType<FeatureLayer>()
-                            .Where(layer => layer.Name == _selected_segments[1].Item2)
-                            .FirstOrDefault();
-                        // This spatial relationship seems to miss many feature classes in houston template
-                        // TODO: Methodically test this
-                        var spatial_filter = new SpatialQueryFilter()
-                        {
-                            FilterGeometry = point_selection,
-                            SpatialRelationship = SpatialRelationship.EnvelopeIntersects
-                        };
-                    });
-
-                    _selected_segments.Clear();
-                    lock (_lock)
-                    {
-                        if (_graphic != null)
-                            _graphic.Dispose();
-                    }
-                    _trackingMouseMove = TrackingState.NotTracking;
-                }
-                // Edit operation syntax
-                //var op = new EditOperation()
-                //{
-                //    Name = "Test Operation",
-                //    SelectModifiedFeatures = true,
-                //    SelectNewFeatures = false
-                //};
-                //op.Modify(insp);
-                //return op.Execute();
                 return true;
             });
             return Task.FromResult(true);
@@ -360,7 +392,7 @@ namespace Chamfer
                     {
                         //update the graphic overlay
 
-                        Polyline preview_line = ChamferLines(_selected_segments[0].Item1, _selected_segments[1].Item1, mouse_point);
+                        Polyline preview_line = ChamferLines(_selected_segments[0], _selected_segments[1], mouse_point);
 
                         this.UpdateOverlay(graphic, preview_line, _dashed_line.MakeSymbolReference());
                     }
