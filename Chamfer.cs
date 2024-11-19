@@ -81,7 +81,7 @@ namespace Chamfer
             public readonly string FeatureLayerName = null;
             public readonly long? OID = null;
 
-            public InfiniteLine(Polyline line) : this(line.Points[0], line.Points[^1], line) { }
+            public InfiniteLine(Polyline line, string featureLayerName = null, long? objectID = null) : this(line.Points[0], line.Points[^1], line, null, featureLayerName, objectID) { }
             public InfiniteLine(Segment seg) : this(seg.StartPoint, seg.EndPoint, null, seg) { }
             public InfiniteLine(Segment seg, string fl_name, long oid) : this(seg.StartPoint, seg.EndPoint, null, seg, fl_name, oid) { }
             public InfiniteLine(MapPoint start_point, MapPoint end_point, Polyline polyline = null, Segment segment = null, string featureLayerName = null, long? objectID = null)
@@ -144,7 +144,19 @@ namespace Chamfer
                         SelectNewFeatures = true
                     };
                     ChamferLines(_selected_segments[0], _selected_segments[1], point_selection as MapPoint, out Polyline chamfer_line, out Polyline new_line1, out Polyline new_line2);
-                    foreach ( (InfiniteLine old_line, Polyline new_line) in new[] { (_selected_segments[0], new_line1), (_selected_segments[1], new_line2) } )
+
+                    var iterList = (_selected_segments[0].OID == _selected_segments[1].OID)
+                        ? new[] { (
+                            new InfiniteLine(
+                                geo.Union(_selected_segments[0].Polyline, _selected_segments[1].Polyline) as Polyline,
+                                _selected_segments[0].FeatureLayerName,
+                                _selected_segments[1].OID
+                            ),
+                            geo.Union(new_line1, new_line2) as Polyline
+                        ) }
+                        : new[] { (_selected_segments[0], new_line1), (_selected_segments[1], new_line2) };
+
+                    foreach ( (InfiniteLine old_line, Polyline new_line) in iterList )
                     {
                         FeatureLayer feature_layer = MapView.Active.Map
                             .GetMapMembersAsFlattenedList().OfType<FeatureLayer>()
