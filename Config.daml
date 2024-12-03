@@ -1,8 +1,8 @@
 ﻿<ArcGIS defaultAssembly="Chamfer.dll" defaultNamespace="Chamfer" xmlns="http://schemas.esri.com/DADF/Registry" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://schemas.esri.com/DADF/Registry file:///C:/Program%20Files/ArcGIS/Pro/bin/ArcGIS.Desktop.Framework.xsd">
   <AddInInfo id="{eccc0d2d-0070-426c-86e6-7a182fca13f0}" version="1.0" desktopVersion="3.3.52636" product="ArcGISPro">
-    <Name>Chamfer</Name>
-    <Description>Chamfer description</Description>
-    <Image>Images\AddinDesktop32.png</Image>
+    <Name>Chamfer Tool</Name>
+    <Description>Adds</Description>
+    <Image>Images\EditingChamferTool32.png</Image>
     <Author>Danda9478</Author>
     <Company>Acme</Company>
     <Date>10/26/2024 6:24:09 PM</Date>
