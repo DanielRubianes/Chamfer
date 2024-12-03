@@ -21,4 +21,11 @@
       </controls>
     </insertModule>
   </modules>
+  <categories>
+    <updateCategory refID="esri_embeddableControls">
+      <insertComponent id="Chamfer_ChamferControl" className="ChamferControlViewModel">
+        <content className="ChamferControlView" />
+      </insertComponent>
+    </updateCategory>
+  </categories>
 </ArcGIS>

@@ -48,11 +48,15 @@ namespace Chamfer
             Tracking
         }
 
-        // TODO: Implement two graphic layers to show selected lines and preview simultaneously
+        // Graphics and symbols to display selected segments and chamfer line preview
         private IDisposable _selection_graphic = null;
         private IDisposable _preview_graphic = null;
         private CIMLineSymbol _solid_line = null;
         private CIMLineSymbol _dashed_line = null;
+
+        // Embeddable control view model
+        //SeqNumControlViewModel _vm;
+
 
         // List < (InfiniteLine bases on selected segment, feature layer name as string) >
         private List<InfiniteLine> _selected_segments = new();
@@ -134,6 +138,7 @@ namespace Chamfer
                 var insp = new Inspector();
 
                 // Run and skip other logic if two segments are already selected
+                // Finalize chamfer operation
                 if (_selected_segments.Count > 1)
                 {
                     _trackingMouseMove = TrackingState.NotTracking;
@@ -187,6 +192,8 @@ namespace Chamfer
 
                                 foreach (Segment segment in line_geom.Parts.SelectMany(segment => segment))
                                 {
+                                    // Detect if chamger line theoretic intersection intersects segment
+                                    // If so, split line before centroid test
                                     Polyline segment_as_line = PolylineBuilderEx.CreatePolyline(segment);
                                     if ( DistanceInDirection(mouse_line, geo.Centroid(segment_as_line)) > 0)
                                         removeSegments.Add(segment_as_line);
