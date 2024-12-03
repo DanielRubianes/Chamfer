@@ -192,8 +192,8 @@ namespace Chamfer
                                         removeSegments.Add(segment_as_line);
                                 }
 
-                                Polyline removeLine = removeSegments.Aggregate( (a, b) => geo.Union(a, b) as Polyline);
-                                line_geom = geo.Difference(line_geom, removeLine) as Polyline;
+                                //Polyline removeLine = removeSegments.Aggregate( (a, b) => geo.Union(a, b) as Polyline);
+                                //line_geom = geo.Difference(line_geom, removeLine) as Polyline;
 
                                 insp.Shape = geo.Union(insp.Shape, new_line);
                                 op.Modify(insp);
