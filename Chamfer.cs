@@ -146,10 +146,14 @@ namespace Chamfer
                     {
                         Name = "Chamfer",
                         SelectModifiedFeatures = true,
-                        SelectNewFeatures = true
+                        SelectNewFeatures = false
                     };
-                    ChamferLines(_selected_segments[0], _selected_segments[1], point_selection as MapPoint, out Polyline chamfer_line, out Polyline new_line1, out Polyline new_line2, out MapPoint intersection_point);
-                    InfiniteLine mouse_line = new(point_selection as MapPoint, intersection_point);
+
+                    ChamferLines(_selected_segments[0], _selected_segments[1], point_selection as MapPoint, out Polyline chamferLine, out Polyline newLine1, out Polyline newLine2, out MapPoint intersectionPoint);
+                    
+                    InfiniteLine mouse_line = new(point_selection as MapPoint, intersectionPoint);
+                    Polygon chamferPoly = PolygonBuilderEx.CreatePolygon(new[] { chamferLine.Points[0], chamferLine.Points[^1], intersectionPoint }, newLine1.SpatialReference);
+                    //op.Create(MapView.Active.Map.GetLayersAsFlattenedList().Where(lyr => lyr.Name == "Permit_Polygon").FirstOrDefault(), chamferPoly);
 
                     var iterList = (_selected_segments[0].OID == _selected_segments[1].OID)
                         ? new[] { (
@@ -157,26 +161,23 @@ namespace Chamfer
                                 geo.Union(_selected_segments[0].Polyline, _selected_segments[1].Polyline) as Polyline,
                                 _selected_segments[0].FeatureLayerName,
                                 _selected_segments[1].OID
-                            ), geo.Union(new_line1, new_line2) as Polyline ) }
-                        : new[] { (_selected_segments[0], new_line1), (_selected_segments[1], new_line2) };
-
-                    foreach ( (InfiniteLine old_line, Polyline new_line) in iterList )
+                            ), geo.Union(newLine1, newLine2) as Polyline ) }
+                        : new[] { (_selected_segments[0], newLine1), (_selected_segments[1], newLine2) };
+                    foreach ( (InfiniteLine oldLine, Polyline newLine) in iterList )
                     {
                         FeatureLayer feature_layer = MapView.Active.Map
                             .GetMapMembersAsFlattenedList().OfType<FeatureLayer>()
-                            .Where(layer => layer.Name == old_line.FeatureLayerName)
+                            .Where(layer => layer.Name == oldLine.FeatureLayerName)
                             .FirstOrDefault();
                         FeatureClass feature_class = feature_layer.GetFeatureClass();
-
                         var OIDFilter = new QueryFilter()
                         {
-                            WhereClause = $"OBJECTID = {old_line.OID}"
+                            WhereClause = $"OBJECTID = {oldLine.OID}"
                         };
 
                         RowCursor cursor = feature_class.Search(OIDFilter);
                         if (cursor == null)
                             continue;
-
 
                         while (cursor.MoveNext())
                         {
@@ -184,32 +185,29 @@ namespace Chamfer
                             {
                                 insp.Load(row);
 
+                                Polyline polyline;
+                                if (insp.Shape.GeometryType == GeometryType.Polygon)
+                                { polyline = geo.Boundary(insp.Shape) as Polyline; }
+                                else if (insp.Shape.GeometryType == GeometryType.Polyline)
+                                    polyline = insp.Shape as Polyline;
+                                else
+                                    return false;
                                 // TODO: Test if newline overlaps old line before running difference
-                                insp.Shape = geo.Difference(insp.Shape, old_line.Polyline);
+                                polyline = geo.Difference(polyline, oldLine.Polyline) as Polyline;
+                                polyline = geo.Difference(polyline, chamferPoly) as Polyline;
+                                polyline = geo.Union(polyline, newLine) as Polyline;
 
-                                Polyline line_geom = insp.Shape as Polyline;
-                                List<Polyline> removeSegments = new();
 
-                                foreach (Segment segment in line_geom.Parts.SelectMany(segment => segment))
-                                {
-                                    // Detect if chamger line theoretic intersection intersects segment
-                                    // If so, split line before centroid test
-                                    Polyline segment_as_line = PolylineBuilderEx.CreatePolyline(segment);
-                                    if ( DistanceInDirection(mouse_line, geo.Centroid(segment_as_line)) > 0)
-                                        removeSegments.Add(segment_as_line);
-                                }
+                                if (insp.Shape.GeometryType == GeometryType.Polygon)
+                                    insp.Shape = geo.ConstructPolygonsFromPolylines(new List<Polyline> { polyline }).FirstOrDefault();
+                                else
+                                    insp.Shape = polyline;
 
-                                //Polyline removeLine = removeSegments.Aggregate( (a, b) => geo.Union(a, b) as Polyline);
-                                //line_geom = geo.Difference(line_geom, removeLine) as Polyline;
-
-                                insp.Shape = geo.Union(insp.Shape, new_line);
                                 op.Modify(insp);
                             }
                         }
                     }
                     op.Execute();
-
-                    //ArcGIS.Desktop.Framework.Dialogs.MessageBox.Show(test_str);
 
                     _selected_segments.Clear();
                     lock (_lock)
@@ -464,12 +462,12 @@ namespace Chamfer
             return finalX;
         }
 
-        private static void ChamferLines(InfiniteLine line1, InfiniteLine line2, MapPoint mouse_point, out Polyline chamfer_line, out Polyline line1_connection, out Polyline line2_connection, out MapPoint intersection_point)
+        private static void ChamferLines(InfiniteLine line1, InfiniteLine line2, MapPoint mouse_point, out Polyline chamferLine, out Polyline line1_connection, out Polyline line2_connection, out MapPoint intersectionPoint)
         {
-            chamfer_line = null;
+            chamferLine = null;
             line1_connection = null;
             line2_connection = null;
-            intersection_point = null;
+            intersectionPoint = null;
             if (line1.SpatialReference != line2.SpatialReference)
                 return;
             if (mouse_point == null)
@@ -477,8 +475,8 @@ namespace Chamfer
             IGeometryEngine geo = GeometryEngine.Instance;
             mouse_point = geo.Project(mouse_point, line1.SpatialReference) as MapPoint;
 
-            intersection_point = GetIntersectionPoint(line1, line2);
-            if (intersection_point == null) // This will filter out parallel lines, including two with null slope
+            intersectionPoint = GetIntersectionPoint(line1, line2);
+            if (intersectionPoint == null) // This will filter out parallel lines, including two with null slope
                 return;
             var lines = new[] { line1, line2 };
 
@@ -488,18 +486,18 @@ namespace Chamfer
             foreach (InfiniteLine line in lines)
             {
                 // Find point farthest 
-                MapPoint int_pt = intersection_point;
+                MapPoint int_pt = intersectionPoint;
                 MapPoint farthest_point = new[] { line.StartPoint, line.EndPoint }
                     .OrderByDescending(point => geo.Distance(int_pt, point))
                     .FirstOrDefault();
-                LineSegment intersection_segment = LineBuilderEx.CreateLineSegment(intersection_point, farthest_point, intersection_point.SpatialReference);
+                LineSegment intersection_segment = LineBuilderEx.CreateLineSegment(intersectionPoint, farthest_point, intersectionPoint.SpatialReference);
 
                 LeftOrRightSide side;
                 GeometryEngine.Instance.QueryPointAndDistance(intersection_segment, SegmentExtensionType.ExtendTangents, mouse_point, AsRatioOrLength.AsRatio, out _, out _, out side);
                 sides.Add(side);
 
                 double intersection_angle = intersection_segment.Angle;
-                chamfer_ratio_points.Add(geo.ConstructPointFromAngleDistance(intersection_point, intersection_angle, shortest_distance, line.SpatialReference));
+                chamfer_ratio_points.Add(geo.ConstructPointFromAngleDistance(intersectionPoint, intersection_angle, shortest_distance, line.SpatialReference));
             }
 
             double chamfer_angle = LineBuilderEx.CreateLineSegment(chamfer_ratio_points[0], chamfer_ratio_points[1], line1.SpatialReference).Angle;
@@ -510,7 +508,7 @@ namespace Chamfer
             MapPoint mouse_chamfer_point = geo.ConstructPointFromAngleDistance(mouse_point, chamfer_angle, shortest_distance, mouse_point.SpatialReference);
 
             InfiniteLine chamfer_stub_line = new(mouse_point, mouse_chamfer_point);
-            InfiniteLine mouse_line = new(mouse_point, intersection_point);
+            InfiniteLine mouse_line = new(mouse_point, intersectionPoint);
 
             var int_pt1 = GetIntersectionPoint(line1, chamfer_stub_line);
             MapPoint end_pt1 = ( DistanceInDirection(mouse_line, line1.Segment.StartPoint) > DistanceInDirection(mouse_line, line1.Segment.EndPoint) )
@@ -522,9 +520,9 @@ namespace Chamfer
                 ? line2.Segment.StartPoint
                 : line2.Segment.EndPoint;
 
-            chamfer_line = PolylineBuilderEx.CreatePolyline(new[] { int_pt1, int_pt2 }, line1.SpatialReference);
+            chamferLine = PolylineBuilderEx.CreatePolyline(new[] { int_pt1, int_pt2 }, line1.SpatialReference);
             line1_connection = PolylineBuilderEx.CreatePolyline(new[] { end_pt1, int_pt1, int_pt2 }, line1.SpatialReference);
-            //line1_connection = geo.Union(chamfer_line, line1_connection) as Polyline;
+            //line1_connection = geo.Union(chamferLine, line1_connection) as Polyline;
             line2_connection = PolylineBuilderEx.CreatePolyline(new[] { end_pt2, int_pt2 }, line1.SpatialReference);
         }
 
