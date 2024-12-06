@@ -7,15 +7,15 @@
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <NoWarn>CA1416</NoWarn>
   </PropertyGroup>
-  <ItemGroup>
+  <!--<ItemGroup>
     <None Remove="Config.daml" />
-  </ItemGroup>
+  </ItemGroup>-->
   <ItemGroup>
-    <Content Include="Config.daml" />    
+    <Content Include="Config.daml" />
     <Content Include="Images\EditingChamferTool16.png" />
     <Content Include="Images\EditingChamferTool32.png" />
     <Content Include="DarkImages\EditingChamferTool16.png" />
-    <Content Include="DarkImages\EditingChamferTool32.png" />    
+    <Content Include="DarkImages\EditingChamferTool32.png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Properties\launchSettings.json" />
@@ -96,6 +96,10 @@
       <CopyLocal>False</CopyLocal>
       <Private>False</Private>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Images\EditingChamferTool16.png" />
+	<Resource Include="Images\EditingChamferTool32.png" />
   </ItemGroup>
    <Import Project="C:\Program Files\ArcGIS\Pro\bin\Esri.ProApp.SDK.Desktop.targets" Condition="Exists('C:\Program Files\ArcGIS\Pro\bin\Esri.ProApp.SDK.Desktop.targets') AND !Exists('Esri.ArcGISPro.Extensions.targets')" />
 </Project>

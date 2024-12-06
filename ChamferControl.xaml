@@ -8,14 +8,24 @@
              mc:Ignorable="d" 
              d:DesignHeight="300" d:DesignWidth="300"
              d:DataContext="{Binding Path=ui.ChamferControlViewModel}">
-            <UserControl.Resources>
+    <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <extensions:DesignOnlyResourceDictionary Source="pack://application:,,,/ArcGIS.Desktop.Framework;component\Themes\Default.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
-    <Grid>
-        <TextBlock Text="{Binding Text}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="4"/>
+    <Grid Margin="0 8 0 0">
+        <!--Style="{DynamicResource Esri_ToggleButtonTrayButton}"-->
+        <ToggleButton Margin="4 0 4 0" Height="32" HorizontalContentAlignment="Left" VerticalAlignment="Top" Style="{DynamicResource Esri_ToggleButtonTrayButton}" IsChecked="{Binding toolActive}">
+            <ToggleButton.Content>
+                <StackPanel Orientation="Horizontal" Margin="8 0 0 0">
+                    <Image Source="Images\EditingChamferTool32.png" Height="28" Width="28" Stretch="Fill" VerticalAlignment="Center" />
+                    <TextBlock Text=" Chamfer" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                </StackPanel>
+            </ToggleButton.Content>
+        </ToggleButton>
+        <CheckBox>Constrain Length</CheckBox>
+        <CheckBox>Constrain Angle</CheckBox>
     </Grid>
 </UserControl>

@@ -10,6 +10,7 @@ using ArcGIS.Desktop.Framework.Contracts;
 using ArcGIS.Desktop.Framework.Controls;
 using ArcGIS.Desktop.Framework.Dialogs;
 using ArcGIS.Desktop.Framework.Threading.Tasks;
+using ArcGIS.Desktop.Internal.GeoProcessing;
 using ArcGIS.Desktop.KnowledgeGraph;
 using ArcGIS.Desktop.Layouts;
 using ArcGIS.Desktop.Mapping;
@@ -24,16 +25,16 @@ namespace Chamfer
 {
     internal class ChamferControlViewModel : EmbeddableControl
     {
+        // TODO: Create custom style for toggle button
         public ChamferControlViewModel(XElement options, bool canChangeOptions) : base(options, canChangeOptions) { }
 
         /// <summary>
         /// Text shown in the control.
         /// </summary>
-        private string _text = "Chamfer";
-        public string Text
+        public static Boolean toolActive
         {
-            get => _text;
-            set => SetProperty(ref _text, value);
+            get { return FrameworkApplication.ActiveTool.GetType() == typeof(Chamfer); }
+            set { if (value) { FrameworkApplication.SetCurrentToolAsync("ChamferTool_Chamfer"); } }
         }
     }
 }

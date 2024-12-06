@@ -13,7 +13,7 @@
   <modules>
     <insertModule id="Chamfer_Module" className="Module1" autoLoad="false" caption="Chamfer Tool">
       <controls>
-        <tool id="ChamferTool_Chamfer" caption="Chamfer" className="Chamfer" loadOnClick="true" smallImage="Images\EditingChamferTool16.png" keytip="ZZ" largeImage="Images\EditingChamferTool32.png" condition="esri_mapping_mapPane" categoryRefID="esri_editing_CommandList">
+        <tool id="ChamferTool_Chamfer" caption="Chamfer" className="Chamfer" loadOnClick="true" smallImage="Images\EditingChamferTool32.png" keytip="ZZ" largeImage="Images\EditingChamferTool32.png" condition="esri_mapping_mapPane" categoryRefID="esri_editing_CommandList">
           <tooltip heading="Chamfer">
 				  Creates a connecting line across two lines<disabledText /></tooltip>
           <content L_group="Reshape" />

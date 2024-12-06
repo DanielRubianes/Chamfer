@@ -55,15 +55,14 @@ namespace Chamfer
         private CIMLineSymbol _dashed_line = null;
 
         // Embeddable control view model
-        //SeqNumControlViewModel _vm;
-
+        ChamferControlViewModel _vm;
 
         // List < (InfiniteLine bases on selected segment, feature layer name as string) >
         private List<InfiniteLine> _selected_segments = new();
 
-        private System.Windows.Point? _lastLocation = null;
-        private System.Windows.Point? _workingLocation = null;
-
+        // Mouse tracking
+        private Point? _lastLocation = null;
+        private Point? _workingLocation = null;
         private TrackingState _trackingMouseMove = TrackingState.NotTracking;
         private static readonly object _lock = new object();
 
@@ -109,14 +108,16 @@ namespace Chamfer
 
         public Chamfer()
         {
+            ControlID = "Chamfer_ChamferControl";
             IsSketchTool = true;
+            UseSnapping = true;
             SketchType = SketchGeometryType.Point;
             SketchOutputMode = SketchOutputMode.Map;
-            UseSnapping = true;
         }
 
         protected override async Task OnToolActivateAsync(bool active)
         {
+            _vm = EmbeddableControl as ChamferControlViewModel;
             _lastLocation = null;
             _workingLocation = null;
             _trackingMouseMove = TrackingState.NotTracking;
